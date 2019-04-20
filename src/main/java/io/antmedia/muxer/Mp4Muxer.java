@@ -1,43 +1,6 @@
 package io.antmedia.muxer;
 
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_FLAG_GLOBAL_HEADER;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_AAC;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_AC3;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_DIRAC;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_DTS;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_DVD_SUBTITLE;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_EAC3;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_H264;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_HEVC;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_JPEG2000;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MJPEG;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MOV_TEXT;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MP2;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MP3;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MP4ALS;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MPEG1VIDEO;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MPEG2VIDEO;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MPEG4;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_MPEG4SYSTEMS;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_NONE;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_PNG;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_QCELP;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_TSCC2;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_VC1;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_VORBIS;
-import static org.bytedeco.javacpp.avcodec.AV_CODEC_ID_VP9;
-import static org.bytedeco.javacpp.avcodec.av_bsf_alloc;
-import static org.bytedeco.javacpp.avcodec.av_bsf_free;
-import static org.bytedeco.javacpp.avcodec.av_bsf_get_by_name;
-import static org.bytedeco.javacpp.avcodec.av_bsf_init;
-import static org.bytedeco.javacpp.avcodec.av_bsf_receive_packet;
-import static org.bytedeco.javacpp.avcodec.av_bsf_send_packet;
-import static org.bytedeco.javacpp.avcodec.av_init_packet;
-import static org.bytedeco.javacpp.avcodec.av_packet_free;
-import static org.bytedeco.javacpp.avcodec.av_packet_ref;
-import static org.bytedeco.javacpp.avcodec.av_packet_unref;
-import static org.bytedeco.javacpp.avcodec.avcodec_parameters_copy;
-import static org.bytedeco.javacpp.avcodec.avcodec_parameters_from_context;
+import static org.bytedeco.javacpp.avcodec.*;
 import static org.bytedeco.javacpp.avformat.AVFMT_GLOBALHEADER;
 import static org.bytedeco.javacpp.avformat.AVFMT_NOFILE;
 import static org.bytedeco.javacpp.avformat.AVIO_FLAG_WRITE;
@@ -118,6 +81,13 @@ public class Mp4Muxer extends Muxer {
 	private boolean isAVCConversionRequired = false;
 	private AVPacket videoPkt;
 	private int rotation;
+	/**
+	 * By default first video key frame should be checked
+	 * and below flag should be set to true
+	 * If first video key frame should not be checked,
+	 * then below should be flag in advance
+	 */
+	private boolean firstKeyFrameReceivedChecked = false;
 	
 
 	public Mp4Muxer(StorageClient storageClient, QuartzSchedulingService scheduler) {
@@ -624,6 +594,17 @@ public class Mp4Muxer extends Muxer {
 	 */
 	@Override
 	public synchronized void writePacket(AVPacket pkt, AVStream stream) {
+		if (!firstKeyFrameReceivedChecked && stream.codec().codec_type() == AVMEDIA_TYPE_VIDEO) {
+			int keyFrame = pkt.flags() & AV_PKT_FLAG_KEY;
+			if (keyFrame == 1) {
+				firstKeyFrameReceivedChecked = true;
+			} else {
+				logger.warn("First video packet is not key frame. It will drop for direct muxing. Stream {}", streamId);
+				// return if firstKeyFrameReceived is not received
+				// below return is important otherwise it does not work with like some encoders(vidiu)
+				return;
+			}
+		}
 
 		if (!isRunning.get() || !registeredStreamIndexList.contains(pkt.stream_index())) {
 			logger.trace("not registered stream index for stream: {}", streamId);
