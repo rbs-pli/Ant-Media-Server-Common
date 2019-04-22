@@ -299,10 +299,15 @@ public class MuxAdaptor implements IRecordingListener, IScheduledJob {
     }
 
     private Muxer addMp4Muxer() {
+        Mp4Muxer mp4Muxer = createMp4Muxer();
+        addMuxer(mp4Muxer);
+        return mp4Muxer;
+    }
+
+    private Mp4Muxer createMp4Muxer() {
         Mp4Muxer mp4Muxer = new Mp4Muxer(storageClient, scheduler);
         mp4Muxer.setAddDateTimeToSourceName(addDateTimeToMp4FileName);
         mp4Muxer.setBitstreamFilter(mp4Filtername);
-        addMuxer(mp4Muxer);
         return mp4Muxer;
     }
 
@@ -889,17 +894,31 @@ public class MuxAdaptor implements IRecordingListener, IScheduledJob {
         this.previewHeight = previewHeight;
     }
 
-    public void startRecording() {
-        Muxer muxer = addMp4Muxer();
-        muxer.init(scope, streamId, 0);
-        muxer.prepare(inputFormatContext);
+    public void startRecording(IScope scope, String name, boolean isAppend) {
+        Muxer muxer = createMp4Muxer();
+        if(muxerList.isEmpty()){
+            //when there is no muxer in the list, init needs to be called
+            mp4MuxingEnabled = true;
+            this.init(scope,name,isAppend);
+            if(!isRecording){
+                this.start();
+            }
+        }
+        else{
+            muxer.init(scope, streamId, 0);
+            muxer.prepare(inputFormatContext);
+            addMuxer(muxer);
+        }
     }
 
     public void stopRecording() {
+        AppSettings appSettingsLocal = getAppSettings();
+        mp4MuxingEnabled = appSettingsLocal.isMp4MuxingEnabled();//restore state to the state before start recording
         Iterator<Muxer> iterator = muxerList.iterator();
         while (iterator.hasNext()) {
             Muxer muxer = iterator.next();
             if (muxer instanceof Mp4Muxer) {
+                muxer.writeTrailer();
                 iterator.remove();
             }
         }
