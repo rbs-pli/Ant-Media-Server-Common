@@ -125,6 +125,7 @@ public class MuxAdaptor implements IRecordingListener, IScheduledJob {
     private Broadcast broadcast;
     private AppSettings appSettings;
     private int previewHeight;
+    private boolean isStartRecording = false;
 
 
     private static Read_packet_Pointer_BytePointer_int readCallback = new Read_packet_Pointer_BytePointer_int() {
@@ -269,20 +270,24 @@ public class MuxAdaptor implements IRecordingListener, IScheduledJob {
 
         this.streamId = name;
         this.scope = scope;
+        logger.info("init0");
         initScheduler();
         if (scheduler == null) {
             logger.warn("scheduler is not available in beans for {}", name);
             return false;
         }
 
+        logger.info("init1");
         initializeDataStore();
         enableSettings();
         initStorageClient();
         enableMp4Setting();
-
-        if (mp4MuxingEnabled) {
+        logger.info("init2");
+        if (mp4MuxingEnabled || isStartRecording) {
+            logger.info("init3");
             addMp4Muxer();
             logger.info("adding MP4 Muxer, add datetime to file name {}", addDateTimeToMp4FileName);
+            logger.info("init4");
         }
 
         if (hlsMuxingEnabled) {
@@ -664,6 +669,9 @@ public class MuxAdaptor implements IRecordingListener, IScheduledJob {
     @Override
     public void start() {
         isRecording = false;
+        if(muxerList.isEmpty()){
+            return;
+        }
         logger.info("Number of items in the queue while adaptor is being started to prepare is {}", getInputQueueSize());
         scheduler.addScheduledOnceJob(0, new IScheduledJob() {
 
@@ -895,12 +903,17 @@ public class MuxAdaptor implements IRecordingListener, IScheduledJob {
     }
 
     public void startRecording(IScope scope, String name, boolean isAppend) {
+        isStartRecording = true;
+        logger.info("startRecording1");
         Muxer muxer = createMp4Muxer();
+        logger.info("startRecording2");
         if(muxerList.isEmpty()){
+            logger.info("startRecording3");
             //when there is no muxer in the list, init needs to be called
-            mp4MuxingEnabled = true;
             this.init(scope,name,isAppend);
+            logger.info("startRecording4");
             if(!isRecording){
+                logger.info("startRecording5");
                 this.start();
             }
         }
@@ -912,6 +925,7 @@ public class MuxAdaptor implements IRecordingListener, IScheduledJob {
     }
 
     public void stopRecording() {
+        isStartRecording = false;
         AppSettings appSettingsLocal = getAppSettings();
         mp4MuxingEnabled = appSettingsLocal.isMp4MuxingEnabled();//restore state to the state before start recording
         Iterator<Muxer> iterator = muxerList.iterator();
